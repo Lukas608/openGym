@@ -1003,18 +1003,21 @@ export function parseBodyweight(text, { unit = 'kg' } = {}) {
       return finishBodyweight(out, unit, source)
     }
     const zepp = zeppLifeColumns(rows[0])
-    if (zepp) {
-      source = 'Zepp Life'
+    const mi = !zepp && miFitnessColumns(rows[0])
+    if (zepp || mi) {
+      source = zepp ? 'Zepp Life' : 'Mi Fitness'
       const days = new Map()
       for (const r of rows.slice(1)) {
-        const when = zeppWhen(r[zepp.time])
+        const reading = zepp ? zeppReading(r, zepp) : miFitnessReading(r, mi)
+        if (!reading) continue
+        const when = scaleWhen(reading.time)
         if (!when) continue
-        const w = zeppNum(r[zepp.weight])
-        // Zepp Life always writes kilograms, whatever the app shows.
+        const w = scaleNum(reading.weight)
+        // Both apps always write kilograms, whatever they show.
         if (w && bodyOk(w, 'kg')) put(when.d, { w, unit: 'kg', t: when.ms }, when.t)
         const values = {}, other = []
-        for (const c of ZEPP_BODY) {
-          const v = zeppNum(r[zepp[c.col]])
+        for (const c of SCALE_BODY) {
+          const v = scaleNum(reading.get(c))
           if (!v || (c.unit === '%' && v > 100)) continue
           if (c.key) { values[c.key] = v; continue }
           const lb = c.unit === 'kg' && unit === 'lb'
@@ -1081,17 +1084,49 @@ function bodyCsvMeasurements(rows) {
 // `time` is UTC with an offset ("2023-01-15 06:52:38+0000"); older Mi Fit files name it `timestamp`
 // and write Unix seconds. Weight, bone and muscle are kg (muscleRate is a mass, despite the name),
 // fat and water percent; a field the scale did not measure is "null" or 0. Height and impedance are
-// left out. The custom fields are named in English on purpose: a re-import, or one after a language
-// change, finds the same field by name instead of making a second one.
-const ZEPP_BODY = [
-  { col: 'fatrate', key: 'bodyFat', unit: '%' },
-  { col: 'musclerate', name: 'Muscle mass', unit: 'kg' },
-  { col: 'bodywaterrate', name: 'Body water', unit: '%' },
-  { col: 'bonemass', name: 'Bone mass', unit: 'kg' },
-  { col: 'visceralfat', name: 'Visceral fat', unit: 'none' },
-  { col: 'metabolism', name: 'BMR (kcal)', unit: 'none' },
-  { col: 'bmi', name: 'BMI', unit: 'none' },
+// left out.
+//
+// Mi Fitness (Xiaomi Wear before it) has no body file: its data copy's hlth_center_fitness_data.csv
+// holds every sample of every kind, `Uid,Sid,Key,Time,Value,UpdateTime`, and a weigh-in is a row
+// with Key "weight" and a JSON Value: {"time":<Unix s>,"weight":85.2,"bmi":27.5,"body_fat_rate":28.4,
+// "moisture_rate":49.1,"bone_mass":3.1,"basal_metabolism":1688,"muscle_rate":57.9,
+// "protein_rate":18.8,"visceral_fat":12}, the same kg/percent split, 0 for what was not measured.
+// A Zepp Life account linked to Mi Fitness brings its history in there (Sid "xiaomisports_app").
+// The file is far too big to read whole on a phone; lib/import-stream.js hands over its weigh-ins.
+//
+// The two apps' readings go to the same fields, so a history in both lands in one series. They are
+// named in English on purpose: a re-import, or one after a language change, finds the same field
+// by name instead of making a second one.
+const SCALE_BODY = [
+  { col: 'fatrate', json: 'body_fat_rate', key: 'bodyFat', unit: '%' },
+  { col: 'musclerate', json: 'muscle_rate', name: 'Muscle mass', unit: 'kg' },
+  { col: 'bodywaterrate', json: 'moisture_rate', name: 'Body water', unit: '%' },
+  { col: 'bonemass', json: 'bone_mass', name: 'Bone mass', unit: 'kg' },
+  { col: 'visceralfat', json: 'visceral_fat', name: 'Visceral fat', unit: 'none' },
+  { col: 'metabolism', json: 'basal_metabolism', name: 'BMR (kcal)', unit: 'none' },
+  { col: 'bmi', json: 'bmi', name: 'BMI', unit: 'none' },
+  { json: 'protein_rate', name: 'Protein', unit: '%' },
 ]
+
+const zeppReading = (r, cols) => ({ time: r[cols.time], weight: r[cols.weight], get: c => (c.col ? r[cols[c.col]] : null) })
+
+/** Column indexes of a Mi Fitness hlth_center_fitness_data.csv, or null for any other file. */
+function miFitnessColumns(head) {
+  const h = head.map(x => String(x ?? '').trim().toLowerCase())
+  const at = name => h.indexOf(name)
+  // hlth_center_aggregated_fitness_data.csv has a Tag column too: daily summaries, not weigh-ins.
+  return h.length >= 5 && at('tag') < 0 && ['uid', 'sid', 'key', 'time', 'value'].every(c => at(c) >= 0)
+    ? { key: at('key'), time: at('time'), value: at('value') } : null
+}
+
+/** One Mi Fitness row as a weigh-in, or null for every other kind of sample. */
+function miFitnessReading(r, cols) {
+  if (String(r[cols.key] ?? '').trim() !== 'weight') return null
+  let v
+  try { v = JSON.parse(r[cols.value]) } catch { return null }
+  if (!v || typeof v !== 'object') return null
+  return { time: v.time ?? r[cols.time], weight: v.weight, get: c => v[c.json] }
+}
 
 /** Column indexes of a Zepp Life body CSV, or null for any other file. */
 function zeppLifeColumns(head) {
@@ -1103,15 +1138,15 @@ function zeppLifeColumns(head) {
   return { ...idx, time }
 }
 
-const zeppNum = v => {
+const scaleNum = v => {
   const s = String(v ?? '').trim()
   if (!s || s.toLowerCase() === 'null') return 0
   const n = parseFloat(s.replace(',', '.'))
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 
-/** A Zepp `time` cell as the local day and time the weigh-in happened, plus its instant. */
-function zeppWhen(v) {
+/** A scale reading's time (Zepp's cell, or Unix seconds) as the local day and time the weigh-in happened, plus its instant. */
+function scaleWhen(v) {
   const s = String(v ?? '').trim()
   let ms = NaN
   if (/^\d{9,13}$/.test(s)) ms = s.length > 11 ? +s : +s * 1000

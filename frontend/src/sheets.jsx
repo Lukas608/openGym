@@ -45,6 +45,7 @@ import { exerciseMuscleSnapshot, loadOfWorkouts, MUSCLES, MUSCLE_NAME, muscleWei
 import { mergeImport, importHasWeighIn } from './lib/import-csv.js'
 import { addWeighIn, editWeighIn, removeWeighIn, restoreWeighIn, readingsOf, readingTime, allReadings, defaultTimeFor, cleanTime, timeOf, dailyModeOf, DEFAULT_TIME } from './lib/weigh-ins.js'
 import { parseImportFile, mergeImportedRoutines, freshRoutines } from './lib/import-apps.js'
+import { readImportText, LARGE_IMPORT_BYTES } from './lib/import-stream.js'
 import { importHevyData, HevyApiError, HEVY_DEV_SETTINGS, mergeHevyRoutines, hevySummaryCounts } from './lib/import-hevy.js'
 import { buildPlanBundle, buildProgrammeBundle, parsePlan, mergePlan } from './lib/plan-share.js'
 import PrintPlanSheet from './components/PrintPlanSheet.jsx'
@@ -628,10 +629,11 @@ function ImportSummary({ parsed, close }) {
 
 /** Read a CSV/XML/JSON export, then show what it would do. */
 export function importFromApp(file, onDone) {
-  const rd = new FileReader()
-  rd.onload = () => {
+  // A Mi Fitness export runs to hundreds of MB; lib/import-stream.js reads only its weigh-ins.
+  if (file.size > LARGE_IMPORT_BYTES) toast(t('Loading…'))
+  readImportText(file).then(text => {
     let parsed
-    try { parsed = parseImportFile(String(rd.result), { unit: S().unit, customEx: S().customEx }) }
+    try { parsed = parseImportFile(text, { unit: S().unit, customEx: S().customEx }) }
     catch (e) { toast(t('Could not read that file')); return }
     if (parsed.error === 'empty') { toast(t('That file is empty')); return }
     // It looks like that app's export but does not read as one: say so rather than guess.
@@ -643,9 +645,7 @@ export function importFromApp(file, onDone) {
     }
     ui().openSheet(close => <ImportSummary parsed={parsed} close={close} />)
     onDone && onDone()
-  }
-  rd.onerror = () => toast(t('Could not read that file'))
-  rd.readAsText(file)
+  }, () => toast(t('Could not read that file')))
 }
 
 /* ============================ import from Hevy API ============================ */

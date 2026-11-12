@@ -9,7 +9,7 @@ Everything here lives in the app under **Settings → Data & backup**, except pl
 | Bring plans over from Liftosaur or Liftoff | **Import from another app** with the JSON export |
 | Pull workouts, routines and weigh-ins from Hevy Pro | **Import from Hevy** (API key) |
 | Bring body weight over from an iPhone | **Import from another app** with the Apple Health export |
-| Bring Mi scale history over from Zepp Life | **Import from another app** with the Zepp Life `BODY` CSV |
+| Bring Mi scale history over from Zepp Life or Mi Fitness | **Import from another app** with the Zepp Life `BODY` CSV or the Mi Fitness data copy |
 | Give someone your routines | **Plan → share button (top right) → Export plan file** |
 | Back up or move everything | **Export backup** / **Import backup** |
 
@@ -136,21 +136,31 @@ weigh-in that way and reads back the same. So does Strong's
 measurements export (Settings → Export Data, the file with *Measurement Type* and *Value*
 columns): only its weight rows are read, each in the unit it was logged in.
 
-## Body weight and composition from Zepp Life (Mi scale)
+## Body weight and composition from Zepp Life or Mi Fitness (Mi scale)
 
 New weigh-ins from a Mi or Xiaomi scale reach openGym through Health Connect on Android: Zepp Life
-writes them there and openGym reads them (Settings → Integrations → Health Connect → Weigh-ins from
-other apps). For the history from before that, request your data in Zepp Life (Profile → Settings →
-Account and security, or the privacy page on the Zepp website, depending on the version), unzip
-the download and pick `BODY/BODY_<number>.csv` under **Import from another app**.
+or Mi Fitness writes them there and openGym reads them (Settings → Integrations → Health Connect →
+Weigh-ins from other apps). For the history from before that, export it from the app the scale
+uses and pick the file under **Import from another app**:
+
+- **Zepp Life**: request your data (Profile → Settings → Account and security, or the privacy page
+  on the Zepp website, depending on the version), unzip it and pick `BODY/BODY_<number>.csv`.
+- **Mi Fitness**: request a copy of your data from your Xiaomi account's privacy page (it can take
+  up to 15 days and comes as one password-protected zip per Xiaomi server region; the password is
+  shown with the request). Unzip it and pick `…_MiFitness_hlth_center_fitness_data.csv`, not the
+  `aggregated` one. The file holds everything the watch or band ever recorded and is often hundreds
+  of megabytes; openGym reads it in pieces and keeps only the weigh-ins, so it imports on a phone
+  too. A Zepp Life account linked to Mi Fitness brings its whole history into this file.
 
 Every weigh-in comes in with its time, converted from the UTC the file uses to your phone's time,
 so a reading Health Connect already brought in at the same minute is not added twice. The body
 composition becomes one measurement check-in per day (the day's first reading, gaps filled from a
 later one): body fat goes into the built-in **Body fat** field, and the rest into fields of their
 own, created on the first import: **Muscle mass** and **Bone mass** (kg, or lb if your profile is in
-lb), **Body water** (%), **Visceral fat**, **BMR (kcal)** and **BMI**. A day that already has a
-check-in keeps it. The older Mi Fit export (Unix seconds in a `timestamp` column) reads the same way.
+lb), **Body water** (%), **Visceral fat**, **BMR (kcal)** and **BMI**, plus **Protein** (%) from Mi
+Fitness. Both apps fill the same fields, so a history split between them ends up in one chart, and a
+weigh-in both files have is only kept once. A day that already has a check-in keeps it. The older Mi
+Fit export (Unix seconds in a `timestamp` column) reads the same way.
 
 ## Sharing a plan
 
