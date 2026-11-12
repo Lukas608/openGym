@@ -23,7 +23,7 @@
 
 import { EXDB, EXIDX, canonicalExId, isCardio as isCardioEx } from './exercises.js'
 import { uid } from './format.js'
-import { addWeighIn, readingsOf, hashId } from './weigh-ins.js'
+import { addWeighIn, readingsOf, hashId, dayOf, timeOf } from './weigh-ins.js'
 import {
   MEASUREMENT_FIELDS, builtinCsvColumn, parseCustomCsvColumn, fromCsvUnit, sameMeasurementKind,
   emptyMeasurement, measurementEntryHasValues, normalizeMeasurementEntry, normalizeMeasurementsState,
@@ -1002,6 +1002,36 @@ export function parseBodyweight(text, { unit = 'kg' } = {}) {
       }
       return finishBodyweight(out, unit, source)
     }
+    const zepp = zeppLifeColumns(rows[0])
+    if (zepp) {
+      source = 'Zepp Life'
+      const days = new Map()
+      for (const r of rows.slice(1)) {
+        const when = zeppWhen(r[zepp.time])
+        if (!when) continue
+        const w = zeppNum(r[zepp.weight])
+        // Zepp Life always writes kilograms, whatever the app shows.
+        if (w && bodyOk(w, 'kg')) put(when.d, { w, unit: 'kg', t: when.ms }, when.t)
+        const values = {}, other = []
+        for (const c of ZEPP_BODY) {
+          const v = zeppNum(r[zepp[c.col]])
+          if (!v || (c.unit === '%' && v > 100)) continue
+          if (c.key) { values[c.key] = v; continue }
+          const lb = c.unit === 'kg' && unit === 'lb'
+          other.push({ name: c.name, unit: lb ? 'lb' : c.unit, value: lb ? Math.round(v / LB_TO_KG * 1000) / 1000 : v })
+        }
+        if (!Object.keys(values).length && !other.length) continue
+        // One check-in per day: the day's first reading, a field it lacks filled by a later one.
+        const prev = days.get(when.d)
+        if (!prev) { days.set(when.d, { d: when.d, ms: when.ms, values, other }); continue }
+        const [first, later] = when.ms < prev.ms ? [{ ...prev, values, other, ms: when.ms }, prev] : [prev, { values, other }]
+        const merged = { d: when.d, ms: first.ms, values: { ...later.values, ...first.values }, other: [...first.other] }
+        for (const o of later.other) if (!merged.other.some(x => x.name === o.name)) merged.other.push(o)
+        days.set(when.d, merged)
+      }
+      measurements = [...days.values()].sort((a, b) => a.ms - b.ms).map(({ d, values, other }) => ({ d, values, other }))
+      return finishBodyweight(out, unit, source, 'kg', measurements)
+    }
     // a weight-only CSV: whichever weight column it has
     const wCol = map.weightKg ?? map.weightLb ?? map.weight
     const dCol = map.date ?? map.startTime
@@ -1044,6 +1074,58 @@ function bodyCsvMeasurements(rows) {
     if (Object.keys(values).length || other.length) days.push({ d: when.d, values, other })
   }
   return days
+}
+
+// Zepp Life (Mi Fit before it) data export, BODY/BODY_<n>.csv, one row per weigh-in on a Mi scale:
+//   time,weight,height,bmi,fatRate,bodyWaterRate,boneMass,metabolism,muscleRate,visceralFat,impedance
+// `time` is UTC with an offset ("2023-01-15 06:52:38+0000"); older Mi Fit files name it `timestamp`
+// and write Unix seconds. Weight, bone and muscle are kg (muscleRate is a mass, despite the name),
+// fat and water percent; a field the scale did not measure is "null" or 0. Height and impedance are
+// left out. The custom fields are named in English on purpose: a re-import, or one after a language
+// change, finds the same field by name instead of making a second one.
+const ZEPP_BODY = [
+  { col: 'fatrate', key: 'bodyFat', unit: '%' },
+  { col: 'musclerate', name: 'Muscle mass', unit: 'kg' },
+  { col: 'bodywaterrate', name: 'Body water', unit: '%' },
+  { col: 'bonemass', name: 'Bone mass', unit: 'kg' },
+  { col: 'visceralfat', name: 'Visceral fat', unit: 'none' },
+  { col: 'metabolism', name: 'BMR (kcal)', unit: 'none' },
+  { col: 'bmi', name: 'BMI', unit: 'none' },
+]
+
+/** Column indexes of a Zepp Life body CSV, or null for any other file. */
+function zeppLifeColumns(head) {
+  const idx = {}
+  head.forEach((h, i) => { const k = String(h ?? '').trim().toLowerCase(); if (k && idx[k] === undefined) idx[k] = i })
+  const time = idx.time ?? idx.timestamp
+  // The body-composition columns are what tell it apart from any other time,weight file.
+  if (time === undefined || idx.weight === undefined || !['fatrate', 'bodywaterrate', 'musclerate'].every(c => idx[c] !== undefined)) return null
+  return { ...idx, time }
+}
+
+const zeppNum = v => {
+  const s = String(v ?? '').trim()
+  if (!s || s.toLowerCase() === 'null') return 0
+  const n = parseFloat(s.replace(',', '.'))
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
+/** A Zepp `time` cell as the local day and time the weigh-in happened, plus its instant. */
+function zeppWhen(v) {
+  const s = String(v ?? '').trim()
+  let ms = NaN
+  if (/^\d{9,13}$/.test(s)) ms = s.length > 11 ? +s : +s * 1000
+  else {
+    const m = /^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?\s*(Z|[+-]\d{2}:?\d{2})?$/i.exec(s)
+    if (!m) return null
+    const [, y, mo, d, h, mi, sec, z] = m
+    if (!z) { const w = parseWhen(s); return w && { ...w, ms: new Date(`${w.d}T${p2(h)}:${mi}:${sec || '00'}`).getTime() } }
+    const off = z.toUpperCase() === 'Z' ? 0 : (z[0] === '-' ? -1 : 1) * (+z.slice(1, 3) * 60 + +z.slice(-2))
+    ms = Date.UTC(+y, +mo - 1, +d, +h, +mi, +(sec || 0)) - off * 60000
+  }
+  if (!Number.isFinite(ms)) return null
+  const when = parseWhen(`${dayOf(ms)} ${timeOf(ms)}`)
+  return when && { ...when, ms }
 }
 
 /** The weigh-ins collected per day, converted to `unit` — each in its own record's unit if it

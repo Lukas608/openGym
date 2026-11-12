@@ -9,6 +9,7 @@ Everything here lives in the app under **Settings → Data & backup**, except pl
 | Bring plans over from Liftosaur or Liftoff | **Import from another app** with the JSON export |
 | Pull workouts, routines and weigh-ins from Hevy Pro | **Import from Hevy** (API key) |
 | Bring body weight over from an iPhone | **Import from another app** with the Apple Health export |
+| Bring Mi scale history over from Zepp Life | **Import from another app** with the Zepp Life `BODY` CSV |
 | Give someone your routines | **Plan → share button (top right) → Export plan file** |
 | Back up or move everything | **Export backup** / **Import backup** |
 
@@ -134,6 +135,22 @@ last), added only to a day that has none yet. The body CSV openGym exports itsel
 weigh-in that way and reads back the same. So does Strong's
 measurements export (Settings → Export Data, the file with *Measurement Type* and *Value*
 columns): only its weight rows are read, each in the unit it was logged in.
+
+## Body weight and composition from Zepp Life (Mi scale)
+
+New weigh-ins from a Mi or Xiaomi scale reach openGym through Health Connect on Android: Zepp Life
+writes them there and openGym reads them (Settings → Integrations → Health Connect → Weigh-ins from
+other apps). For the history from before that, request your data in Zepp Life (Profile → Settings →
+Account and security, or the privacy page on the Zepp website, depending on the version), unzip
+the download and pick `BODY/BODY_<number>.csv` under **Import from another app**.
+
+Every weigh-in comes in with its time, converted from the UTC the file uses to your phone's time,
+so a reading Health Connect already brought in at the same minute is not added twice. The body
+composition becomes one measurement check-in per day (the day's first reading, gaps filled from a
+later one): body fat goes into the built-in **Body fat** field, and the rest into fields of their
+own, created on the first import: **Muscle mass** and **Bone mass** (kg, or lb if your profile is in
+lb), **Body water** (%), **Visceral fat**, **BMR (kcal)** and **BMI**. A day that already has a
+check-in keeps it. The older Mi Fit export (Unix seconds in a `timestamp` column) reads the same way.
 
 ## Sharing a plan
 
