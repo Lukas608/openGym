@@ -16,6 +16,22 @@ import LineChart from '../components/LineChart.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button, NumberField, Section, Segmented, SelectRow, Switch, TextField } from '../components/ui.jsx'
 import { confirmSheet } from '../sheets.jsx'
+import { SKINFOLD_SITES, skinfoldBodyFat, skinfoldFatSeries } from '../lib/skinfold.js'
+import { sexOf } from '../lib/strength-level.js'
+
+// Body fat worked out from the skinfolds (lib/skinfold.js): a chart of its own, never a stored field.
+const SKINFOLD_FAT = { key: 'skinfoldFat', label: 'Body fat (skinfolds)', kind: 'percent' }
+
+/** The line under the skinfold inputs: the result, or what it still needs. */
+function skinfoldLine(entry, S) {
+  const r = skinfoldBodyFat(entry, S)
+  if (!r) return null
+  if (r.missing === 'profile') return t('Set your sex and year of birth under About you to work out body fat from these.')
+  if (r.missing === 'sites') return sexOf(S) === 'female'
+    ? t('For body fat, measure all 7 sites, or triceps, suprailiac and thigh.')
+    : t('For body fat, measure all 7 sites, or chest, abdominal and thigh.')
+  return r.sites === 7 ? t('Body fat from 7 skinfolds: {0}%', fmtNum(r.fat)) : t('Body fat from 3 skinfolds: {0}%', fmtNum(r.fat))
+}
 
 // Every write leaves the list in its one-entry-per-day shape (normalizeMeasurementsState).
 const update = (fn, ...rest) => useStore.getState().update(s => { fn(s); normalizeMeasurementsState(s) }, ...rest)
@@ -73,7 +89,7 @@ function MeasurementLog({ sourceDate, close }) {
           if (field.unit) item.unit = field.unit
         }
       } else if (field.key === 'bodyFat') base.bodyFat = value
-      else base[field.key] = value == null ? null : fromMeasurementDisplay(value, S.unit)
+      else base[field.key] = value == null ? null : fromMeasurementDisplay(value, S.unit, field)
     }
     if (!measurementEntryHasValues(base)) { toast(t('Enter at least one measurement')); return }
     // `t` is when the check-in was last saved: the newer one of a day wins a sync merge, the
@@ -103,6 +119,11 @@ function MeasurementLog({ sourceDate, close }) {
         </span>
       </label>)}
     </div> : <div className="empty small">{t('Choose at least one measurement first.')}</div>}
+    {/* Skinfolds are typed in mm, the unit they are stored in, so the form's values read as they are. */}
+    {fields.some(f => SKINFOLD_SITES.includes(f.key)) && (() => {
+      const line = skinfoldLine({ d: date, ...Object.fromEntries(SKINFOLD_SITES.map(k => [k, values[k]])) }, S)
+      return line && <div className="small dim" style={{ marginTop: 10 }} aria-live="polite">{line}</div>
+    })()}
     <div style={{ height: 14 }} />
     <Button variant="primary" onClick={save} disabled={!fields.length}>{t('Save')}</Button>
     <div style={{ height: 8 }} />
@@ -159,6 +180,9 @@ function ManageMeasurements({ close }) {
           options={unitOptions(customMeasurementUnits(field, S.measurements))}
           onChange={value => setCustomUnit(field.id, value)} />
       </div>)}
+      {group === 'Skinfolds' && <div className="muted small" style={{ padding: '8px 2px 2px' }}>
+        {t('Body fat is worked out from all 7 skinfolds, or from 3 (chest, abdominal and thigh for men; triceps, suprailiac and thigh for women), with your sex and year of birth from About you. It is shown beside the Body fat field, not saved into it.')}
+      </div>}
     </Section>)}
     <div className="muted small" style={{ marginBottom: 12 }}>{t('Logged values keep their type. Add a new measurement to use a different type.')}</div>
     <h4 className="sec">{t('Custom measurement')}</h4>
@@ -192,15 +216,17 @@ export default function Measurements() {
       const key = 'other:' + custom.id
       if (latestMeasurement(S, key) && !out.some(f => f.key === key)) out.push({ key, label: custom.name, unit: custom.unit, custom: true, group: 'Other' })
     }
+    if (skinfoldFatSeries(S).length) out.push(SKINFOLD_FAT)
     return out
   }, [S])
   const fallback = available.find(f => f.key === 'waist')?.key || available[0]?.key || null
   const [selected, setSelected] = useState(fallback)
   const key = available.some(f => f.key === selected) ? selected : fallback
   const field = available.find(f => f.key === key)
-  const points = key ? measurementSeries(S, key, range) : []
+  const series = r => (key === SKINFOLD_FAT.key ? skinfoldFatSeries(S, r) : key ? measurementSeries(S, key, r) : [])
+  const points = series(range)
   const unit = fieldUnit(field, S.unit)
-  const all = key ? measurementSeries(S, key) : []
+  const all = series(0)
   const latest = all.at(-1)
   const previous = all.at(-2)
   const delta = latest && previous ? Math.round((latest.y - previous.y) * 10) / 10 : null

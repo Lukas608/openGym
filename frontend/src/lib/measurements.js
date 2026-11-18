@@ -22,10 +22,22 @@ export const MEASUREMENT_FIELDS = [
   { key: 'ankleLeft', label: 'Left ankle', group: 'Legs', optional: true },
   { key: 'ankleRight', label: 'Right ankle', group: 'Legs', optional: true },
   { key: 'bodyFat', label: 'Body fat', group: 'Other', kind: 'percent', optional: true },
+  // Caliper skinfolds, always in mm whatever the profile's unit; lib/skinfold.js works out body
+  // fat from them. The seven Jackson & Pollock sites, in the order a caliper usually goes round.
+  { key: 'sfChest', label: 'Chest skinfold', group: 'Skinfolds', kind: 'mm', optional: true, csv: 'chest_skinfold_mm' },
+  { key: 'sfMidaxillary', label: 'Midaxillary skinfold', group: 'Skinfolds', kind: 'mm', optional: true, csv: 'midaxillary_skinfold_mm' },
+  { key: 'sfTriceps', label: 'Triceps skinfold', group: 'Skinfolds', kind: 'mm', optional: true, csv: 'triceps_skinfold_mm' },
+  { key: 'sfSubscapular', label: 'Subscapular skinfold', group: 'Skinfolds', kind: 'mm', optional: true, csv: 'subscapular_skinfold_mm' },
+  { key: 'sfAbdominal', label: 'Abdominal skinfold', group: 'Skinfolds', kind: 'mm', optional: true, csv: 'abdominal_skinfold_mm' },
+  { key: 'sfSuprailiac', label: 'Suprailiac skinfold', group: 'Skinfolds', kind: 'mm', optional: true, csv: 'suprailiac_skinfold_mm' },
+  { key: 'sfThigh', label: 'Thigh skinfold', group: 'Skinfolds', kind: 'mm', optional: true, csv: 'thigh_skinfold_mm' },
 ]
 
 export const MEASUREMENT_KEYS = MEASUREMENT_FIELDS.map(f => f.key)
 export const DEFAULT_MEASUREMENT_KEYS = MEASUREMENT_FIELDS.filter(f => !f.optional).map(f => f.key)
+const MM_KEYS = new Set(MEASUREMENT_FIELDS.filter(f => f.kind === 'mm').map(f => f.key))
+// The unit a built-in field is stored and checked in: percent, mm, or null for a length in cm.
+const builtinUnit = key => key === 'bodyFat' ? '%' : MM_KEYS.has(key) ? 'mm' : null
 
 const round = n => Math.round(n * 10) / 10
 const valid = (v, unit) => v != null && v !== '' && Number.isFinite(+v) &&
@@ -41,7 +53,8 @@ export const measurementUnitLabel = unit => unit === 'none' ? '' : unit
 // A unit where 0 is a reading, not an empty field: 0 % or a score of 0.
 export const zeroIsReading = unit => unit === '%' || unit === 'none'
 
-export const measurementUnit = (unit, field) => field?.key === 'bodyFat' ? '%' : unitOf(field) || (unit === 'lb' ? 'in' : 'cm')
+export const measurementUnit = (unit, field) => field?.key === 'bodyFat' || field?.kind === 'percent' ? '%'
+  : field?.kind === 'mm' ? 'mm' : unitOf(field) || (unit === 'lb' ? 'in' : 'cm')
 export const toMeasurementDisplay = (value, unit, field) => {
   if (value == null) return null
   const display = measurementUnit(unit, field)
@@ -73,7 +86,7 @@ export function emptyMeasurement(date, custom = []) {
 export function normalizeMeasurementEntry(raw = {}, custom = []) {
   const entry = emptyMeasurement(raw.d || '', custom)
   entry.t = Number.isFinite(+raw.t) ? +raw.t : entry.t
-  for (const key of MEASUREMENT_KEYS) entry[key] = valid(raw[key], key === 'bodyFat' ? '%' : null)
+  for (const key of MEASUREMENT_KEYS) entry[key] = valid(raw[key], builtinUnit(key))
 
   const known = new Map(custom.map(c => [c.id, c]))
   const seen = new Set()
@@ -136,7 +149,7 @@ export function normalizeMeasurementsState(state) {
 
 export function measurementValue(entry, key) {
   if (!entry) return null
-  if (!key.startsWith('other:')) return valid(entry[key], key === 'bodyFat' ? '%' : null)
+  if (!key.startsWith('other:')) return valid(entry[key], builtinUnit(key))
   const row = (entry.other || []).find(o => o.id === key.slice(6))
   return valid(row?.value, unitOf(row))
 }
@@ -157,7 +170,7 @@ export function measurementSeries(state, key, range = 0, now = Date.now()) {
   const unit = state.unit || 'kg'
   const field = key.startsWith('other:')
     ? (state.customMeasurements || []).find(c => c.id === key.slice(6)) || { key }
-    : { key }
+    : MEASUREMENT_FIELDS.find(f => f.key === key) || { key }
   return (state.measurements || []).map(entry => {
     const raw = measurementValue(entry, key)
     const at = new Date(entry.d + 'T12:00:00').getTime()
@@ -179,15 +192,15 @@ export function latestMeasurement(state, key) {
 }
 
 export function measurementEntryHasValues(entry) {
-  return MEASUREMENT_KEYS.some(k => valid(entry?.[k], k === 'bodyFat' ? '%' : null) != null) ||
+  return MEASUREMENT_KEYS.some(k => valid(entry?.[k], builtinUnit(k)) != null) ||
     (entry?.other || []).some(o => valid(o?.value, unitOf(o)) != null)
 }
 
 // ---- CSV columns (lib/export-csv.js bodyCSV, read back by lib/import-csv.js parseBodyweight) ----
-// A built-in field is a fixed snake_case column in cm (body fat in percent). A custom field's
+// A built-in field is a fixed snake_case column in cm (body fat in percent, a skinfold in mm). A custom field's
 // column is its name with its unit in brackets, "Muscle ratio (%)", its values in that unit; a
 // legacy field without a unit stores cm, so its column says cm. A unitless field is its bare name.
-export const builtinCsvColumn = f => f.kind === 'percent' ? 'body_fat_percent' : f.key.replace(/[A-Z]/g, c => '_' + c.toLowerCase()) + '_cm'
+export const builtinCsvColumn = f => f.csv || (f.kind === 'percent' ? 'body_fat_percent' : f.key.replace(/[A-Z]/g, c => '_' + c.toLowerCase()) + '_cm')
 export const customCsvColumn = (name, unit) => unit === 'none' ? name : `${name} (${unitOf({ unit }) || 'cm'})`
 export function parseCustomCsvColumn(header) {
   const h = String(header ?? '').trim()

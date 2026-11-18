@@ -2441,6 +2441,21 @@ export const PT_BR_OVERRIDES = {
   "Your watch stops getting workouts while Watch is off. It stays paired.": "Seu relógio para de receber treinos enquanto “Relógio” estiver desligado. Continua pareado.",
   "Your webhooks stop sending while Integrations is off. They stay set up.": "Seus webhooks param de enviar enquanto “Integrações” estiver desligado. Continuam configurados.",
   "{0} stops syncing while Health is off. Nothing is disconnected, and it catches up once Health is back.": "{0} para de sincronizar enquanto “Saúde” estiver desligado. Nada fica desconectado, e ele se atualiza quando “Saúde” voltar.",
+  "Skinfolds": "Dobras cutâneas",
+  "Chest skinfold": "Dobra peitoral",
+  "Midaxillary skinfold": "Dobra axilar média",
+  "Triceps skinfold": "Dobra tricipital",
+  "Subscapular skinfold": "Dobra subescapular",
+  "Abdominal skinfold": "Dobra abdominal",
+  "Suprailiac skinfold": "Dobra suprailíaca",
+  "Thigh skinfold": "Dobra da coxa",
+  "Body fat (skinfolds)": "Gordura corporal (dobras)",
+  "Body fat from 7 skinfolds: {0}%": "Gordura corporal com 7 dobras: {0}%",
+  "Body fat from 3 skinfolds: {0}%": "Gordura corporal com 3 dobras: {0}%",
+  "Set your sex and year of birth under About you to work out body fat from these.": "Informe seu sexo e ano de nascimento em “Sobre você” para calcular a gordura corporal com essas dobras.",
+  "For body fat, measure all 7 sites, or chest, abdominal and thigh.": "Para a gordura corporal, meça os 7 pontos, ou peito, abdômen e coxa.",
+  "For body fat, measure all 7 sites, or triceps, suprailiac and thigh.": "Para a gordura corporal, meça os 7 pontos, ou tríceps, suprailíaca e coxa.",
+  "Body fat is worked out from all 7 skinfolds, or from 3 (chest, abdominal and thigh for men; triceps, suprailiac and thigh for women), with your sex and year of birth from About you. It is shown beside the Body fat field, not saved into it.": "A gordura corporal é calculada com as 7 dobras, ou com 3 (peito, abdômen e coxa para homens; tríceps, suprailíaca e coxa para mulheres), com seu sexo e ano de nascimento de “Sobre você”. Ela aparece ao lado do campo Gordura corporal, sem ser salva nele.",
 }
 
 export default { ...pt, ...PT_BR_OVERRIDES }
